@@ -128,6 +128,14 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       }
 
       set({ session: data.session, profile });
+
+      // TODO Fase 6 (push): cuando esté listo el dev build, descomentar:
+      // void registrarParaPush(profile.id);
+      // (import { registrarParaPush } from '@/lib/push' arriba del archivo)
+      // En Expo Go la llamada falla silenciosa, así que dejarla activa allí
+      // tampoco rompe nada — pero el warning de "expo-notifications no
+      // funciona en Expo Go SDK 53+" ensucia los logs.
+
       return { ok: true };
     } catch (err) {
       const msg = mapAuthError(err);
@@ -199,6 +207,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       }
 
       set({ session, profile });
+
+      // TODO Fase 6 (push): mismo TODO que en signIn:
+      // void registrarParaPush(profile.id);
+
       return { ok: true };
     } catch (err) {
       const msg = mapAuthError(err);
