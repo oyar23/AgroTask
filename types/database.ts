@@ -35,3 +35,26 @@ export type Tarea = {
   created_at: string;
   updated_at: string;
 };
+
+// Tarea con el nombre del empleado embebido. Lo usamos en las listas para
+// no hacer N+1 SELECTs sobre profiles. Supabase devuelve el nombre via
+// `select('*, empleado:profiles!tareas_empleado_id_fkey(nombre)')`.
+export type TareaConEmpleado = Tarea & {
+  empleado: { nombre: string } | null;
+};
+
+export type Foto = {
+  id: string;
+  tarea_id: string;
+  subida_por: string;
+  storage_path: string;
+  created_at: string;
+};
+
+export type Comentario = {
+  id: string;
+  tarea_id: string;
+  autor_id: string;
+  mensaje: string;
+  created_at: string;
+};

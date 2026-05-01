@@ -14,8 +14,27 @@ export default function JefeLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: 'Jefe',
+          title: 'Inicio',
           headerRight: () => <LogoutButton />,
+        }}
+      />
+      <Stack.Screen
+        name="tareas/index"
+        options={{
+          title: 'Tareas',
+          headerRight: () => <LogoutButton />,
+        }}
+      />
+      <Stack.Screen
+        name="tareas/nueva"
+        options={{
+          title: 'Nueva tarea',
+        }}
+      />
+      <Stack.Screen
+        name="tareas/[id]"
+        options={{
+          title: 'Detalle',
         }}
       />
     </Stack>
