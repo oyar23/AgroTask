@@ -10,10 +10,12 @@ import {
 import { Button } from '@/components/button';
 import { DatePickerField } from '@/components/date-picker-field';
 import { Dropdown, type DropdownOption } from '@/components/dropdown';
+import { FotoGrid } from '@/components/foto-grid';
 import { ScreenContainer } from '@/components/screen-container';
 import { labelEstado } from '@/components/tarea-card';
 import { TextInput } from '@/components/text-input';
 import { useEmpleados } from '@/hooks/use-empleados';
+import { useFotos } from '@/hooks/use-fotos';
 import {
   actualizarTarea,
   eliminarTarea,
@@ -35,6 +37,7 @@ export default function TareaDetalleJefe() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { tarea, loading, error, refresh } = useTarea(id ?? null);
   const { empleados } = useEmpleados(tarea?.campo_id ?? null);
+  const { fotos, refresh: refreshFotos } = useFotos(id ?? null);
 
   const [editing, setEditing] = useState(false);
   const [titulo, setTitulo] = useState('');
@@ -226,6 +229,11 @@ export default function TareaDetalleJefe() {
         onPress={handleEliminar}
         loading={deleting}
       />
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Fotos del empleado</Text>
+        <FotoGrid fotos={fotos} onChange={() => void refreshFotos()} />
+      </View>
     </ScreenContainer>
   );
 }
@@ -301,6 +309,16 @@ const styles = StyleSheet.create({
     minHeight: 110,
     textAlignVertical: 'top',
     paddingTop: 12,
+  },
+  section: {
+    paddingTop: 16,
+    gap: 10,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#666',
+    textTransform: 'uppercase',
   },
   formError: {
     color: '#c0392b',

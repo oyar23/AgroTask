@@ -8,8 +8,11 @@ import {
 } from 'react-native';
 
 import { Button } from '@/components/button';
+import { FotoGrid } from '@/components/foto-grid';
+import { FotoUploader } from '@/components/foto-uploader';
 import { ScreenContainer } from '@/components/screen-container';
 import { labelEstado } from '@/components/tarea-card';
+import { useFotos } from '@/hooks/use-fotos';
 import { actualizarTarea, useTarea } from '@/hooks/use-tareas';
 import type { EstadoTarea } from '@/types/database';
 
@@ -17,6 +20,7 @@ export default function TareaDetalleEmpleado() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { tarea, loading, error, refresh } = useTarea(id ?? null);
+  const { fotos, refresh: refreshFotos } = useFotos(id ?? null);
 
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
@@ -108,7 +112,10 @@ export default function TareaDetalleEmpleado() {
       </View>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Fotos</Text>
-        <Text style={styles.placeholder}>Próximamente</Text>
+        <FotoUploader tareaId={tarea.id} onUploaded={() => void refreshFotos()} />
+        <View style={styles.gridSpacer}>
+          <FotoGrid fotos={fotos} onChange={() => void refreshFotos()} />
+        </View>
       </View>
     </ScreenContainer>
   );
@@ -183,7 +190,10 @@ const styles = StyleSheet.create({
   },
   section: {
     paddingTop: 12,
-    gap: 6,
+    gap: 10,
+  },
+  gridSpacer: {
+    marginTop: 4,
   },
   sectionTitle: {
     fontSize: 15,
