@@ -62,3 +62,36 @@ marcan tareas como hechas y suben fotos como evidencia.
 - /supabase/schema.sql (el modelo de datos lo hace el usuario)
 - /supabase/policies.sql (las RLS las hace el usuario)
 - Configuración de despliegue (EAS, certificados)
+
+## Convenciones que aparecieron durante la implementación
+
+- **Hooks con patrón loading/error/refresh.** Cada hook que trae datos
+  expone `{ data, loading, error, refresh }`. `cargar` se memoiza con
+  `useCallback`, se dispara con `useEffect`, y `refresh` se devuelve para
+  pull-to-refresh y para invalidar después de mutaciones. No usamos
+  React Query / SWR (mantenemos bundle chico).
+- **Mutaciones como funciones puras, no como métodos del store.** Las
+  mutaciones (`crearTarea`, `subirFoto`, etc.) viven en `lib/` o `hooks/`
+  y devuelven `{ ok: true, ... } | { ok: false, error: string }`. La UI
+  decide cómo reaccionar. Solo auth vive en Zustand.
+- **Mensajes de error mapeados a español en el cliente.** Nunca mostrar
+  el mensaje crudo de Supabase/Postgres. Cada módulo tiene su
+  `mapXErrror()` (ver `auth-helpers.ts`, `use-tareas.ts`, `storage.ts`).
+- **Imports absolutos con `@/`.** Configurado en `tsconfig.json`,
+  `babel.config.js`. Evita `../../../`.
+- **Sin `as any`, sin `// @ts-ignore`.** Si Supabase infiere mal un join,
+  hacemos `as unknown as T` con un comentario explicando por qué.
+- **`useFocusEffect` para refrescar al volver a una pantalla.** En
+  navegaciones push/pop con expo-router, el `useEffect([])` solo corre al
+  primer mount. Para refrescar al volver, usamos `useFocusEffect`.
+- **Formularios: Zod para validación, mensaje en español.** Schema en
+  `types/`, parsing con `safeParse`, distribución de errores por campo.
+- **`typedRoutes` desactivado.** Se desactivó el experimental
+  `experiments.typedRoutes` de expo-router por fricción con paths
+  dinámicos y stale `.expo/types`. Dejamos las strings absolutas y
+  confiamos en testing manual.
+- **Todo el SQL nuevo va en archivos separados** (`schema-push.sql`,
+  `policies-storage.sql`) para que el usuario los aplique en orden sin
+  tener que tocar `schema.sql`/`policies.sql` originales.
+- **Edge Functions excluidas del tsconfig** (`supabase/edge-functions`)
+  porque corren en Deno, no en el bundle de la app, y usan APIs propias.
