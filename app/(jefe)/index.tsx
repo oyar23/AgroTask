@@ -1,10 +1,21 @@
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
-import { ScreenContainer } from '@/components/screen-container';
+import { EmpleadoProgressItem } from '@/components/empleado-progress';
+import { StatCard } from '@/components/stat-card';
 import { TextInput } from '@/components/text-input';
+import { useDashboard } from '@/hooks/use-dashboard';
 import { useMiCampo } from '@/hooks/use-mi-campo';
 import { useAuthStore } from '@/lib/auth-store';
 import { supabase } from '@/lib/supabase';
@@ -12,10 +23,21 @@ import { campoFormSchema } from '@/types/tareas';
 
 export default function JefeIndex() {
   const profile = useAuthStore((s) => s.profile);
-  const { campo, loading, refresh } = useMiCampo();
   const router = useRouter();
+  const { campo, loading: loadingCampo, refresh: refreshCampo } = useMiCampo();
+  const { data, loading: loadingData, refresh: refreshDashboard } = useDashboard(
+    campo?.id ?? null,
+  );
 
-  if (loading) {
+  // Refrescar datos al volver a esta pantalla.
+  useFocusEffect(
+    useCallback(() => {
+      void refreshCampo();
+      void refreshDashboard();
+    }, [refreshCampo, refreshDashboard]),
+  );
+
+  if (loadingCampo) {
     return (
       <View style={styles.loadingScreen}>
         <ActivityIndicator color="#1f6f3f" size="large" />
@@ -24,34 +46,107 @@ export default function JefeIndex() {
   }
 
   if (!campo) {
-    return <CrearCampoForm onCreated={() => void refresh()} />;
+    return <CrearCampoForm onCreated={() => void refreshCampo()} />;
   }
 
   return (
-    <ScreenContainer>
-      <View style={styles.header}>
-        <Text style={styles.title}>Hola, {profile?.nombre}</Text>
-        <Text style={styles.subtitle}>{campo.nombre}</Text>
-        <View style={styles.codigoCard}>
-          <Text style={styles.codigoLabel}>Código del campo</Text>
-          <Text style={styles.codigoValue}>{campo.codigo}</Text>
-          <Text style={styles.codigoHelp}>
-            Compartilo con tus empleados para que se registren.
+    <SafeAreaView style={styles.safe} edges={['bottom']}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={loadingData}
+            onRefresh={() => void refreshDashboard()}
+            tintColor="#1f6f3f"
+          />
+        }
+      >
+        <View>
+          <Text style={styles.greeting}>Hola, {profile?.nombre}</Text>
+          <Text style={styles.campoNombre}>{campo.nombre}</Text>
+          <Text style={styles.codigo}>
+            Código del campo: <Text style={styles.codigoValor}>{campo.codigo}</Text>
           </Text>
         </View>
-      </View>
 
-      <Button
-        label="Ver tareas"
-        onPress={() => router.push('/(jefe)/tareas')}
-      />
-      <Button
-        label="Nueva tarea"
-        variant="secondary"
-        onPress={() => router.push('/(jefe)/tareas/nueva')}
-      />
-    </ScreenContainer>
+        <View style={styles.statsGrid}>
+          <StatCard label="Pendientes" value={data.stats.pendientes} tono="amarillo" />
+          <StatCard label="En curso" value={data.stats.enCurso} tono="azul" />
+          <StatCard label="Hechas hoy" value={data.stats.hechasHoy} tono="verde" />
+          <StatCard label="Hechas semana" value={data.stats.hechasSemana} tono="gris" />
+        </View>
+
+        <Section title="Progreso por empleado (últimos 7 días)">
+          {data.porEmpleado.length === 0 ? (
+            <Text style={styles.empty}>
+              Aún no hay empleados. Compartí el código {campo.codigo} para que se registren.
+            </Text>
+          ) : (
+            data.porEmpleado.map((e) => (
+              <EmpleadoProgressItem key={e.id} empleado={e} />
+            ))
+          )}
+        </Section>
+
+        <Section title="Tareas vencidas">
+          {data.vencidas.length === 0 ? (
+            <Text style={styles.empty}>Sin tareas vencidas. ¡Bien ahí!</Text>
+          ) : (
+            data.vencidas.map((v) => (
+              <Pressable
+                key={v.id}
+                onPress={() => router.push(`/(jefe)/tareas/${v.id}`)}
+                style={({ pressed }) => [
+                  styles.vencidaItem,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.vencidaTitulo} numberOfLines={1}>
+                  {v.titulo}
+                </Text>
+                <Text style={styles.vencidaSub}>
+                  {v.empleadoNombre} · vencida el {formatDate(v.fechaLimite)}
+                </Text>
+              </Pressable>
+            ))
+          )}
+        </Section>
+
+        <View style={styles.actions}>
+          <Button
+            label="Ver todas las tareas"
+            onPress={() => router.push('/(jefe)/tareas')}
+          />
+          <Button
+            label="Nueva tarea"
+            variant="secondary"
+            onPress={() => router.push('/(jefe)/tareas/nueva')}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
+}
+
+type SectionProps = {
+  title: string;
+  children: React.ReactNode;
+};
+
+function Section({ title, children }: SectionProps) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionBody}>{children}</View>
+    </View>
+  );
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}`;
 }
 
 type CrearCampoFormProps = {
@@ -139,45 +234,95 @@ function CrearCampoForm({ onCreated }: CrearCampoFormProps) {
 }
 
 const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
   loadingScreen: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-  header: {
-    gap: 6,
+  content: {
+    padding: 16,
+    gap: 16,
   },
+  greeting: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1f6f3f',
+  },
+  campoNombre: {
+    fontSize: 16,
+    color: '#444',
+  },
+  codigo: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  codigoValor: {
+    fontWeight: '700',
+    color: '#1f6f3f',
+    letterSpacing: 1,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  section: {
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#666',
+    textTransform: 'uppercase',
+  },
+  sectionBody: {
+    backgroundColor: '#fafafa',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  empty: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  vencidaItem: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  vencidaTitulo: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#c0392b',
+  },
+  vencidaSub: {
+    fontSize: 13,
+    color: '#666',
+  },
+  actions: {
+    gap: 10,
+    paddingTop: 8,
+  },
+  // Crear campo
   title: {
     fontSize: 26,
     fontWeight: '800',
     color: '#1f6f3f',
   },
   subtitle: {
-    fontSize: 17,
+    fontSize: 16,
     color: '#444',
-  },
-  codigoCard: {
-    marginTop: 8,
-    padding: 16,
-    backgroundColor: '#eef7f0',
-    borderRadius: 10,
-    gap: 4,
-  },
-  codigoLabel: {
-    fontSize: 13,
-    color: '#1f6f3f',
-    fontWeight: '700',
-  },
-  codigoValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1f6f3f',
-    letterSpacing: 2,
-  },
-  codigoHelp: {
-    fontSize: 13,
-    color: '#555',
   },
   formContent: {
     flexGrow: 1,
