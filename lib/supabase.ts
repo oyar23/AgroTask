@@ -12,11 +12,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
+// En SSR (build estático web sin DOM) no podemos usar AsyncStorage porque
+// importa código que toca `window` al evaluarse. Pasarle `undefined` al
+// cliente Supabase deja al GoTrueClient en un estado limbo donde
+// `getSession()` se cuelga. La solución es darle siempre un storage válido:
+// memoryStorage no-op en SSR, AsyncStorage real en mobile y web client.
+const inSSR = typeof window === 'undefined';
+
+const memoryStorage = {
+  getItem: async () => null,
+  setItem: async () => {},
+  removeItem: async () => {},
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
+    storage: inSSR ? memoryStorage : AsyncStorage,
+    autoRefreshToken: !inSSR,
+    persistSession: !inSSR,
     detectSessionInUrl: false,
   },
 });

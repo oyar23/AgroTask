@@ -6,12 +6,15 @@ agrarios y vean su progreso. Empleados reciben notificaciones,
 marcan tareas como hechas y suben fotos como evidencia.
 
 ## Stack
-- Expo SDK 51 + React Native + TypeScript
-- expo-router (file-based routing)
+- Expo SDK 54 + React 19 + React Native 0.81 + TypeScript
+- expo-router v6 (file-based routing)
 - Supabase: auth, postgres, storage, realtime
 - Zustand para estado global
+- Zod para validación de schemas (solo en formularios; para validaciones
+  internas chicas usar funciones simples)
 - expo-notifications, expo-image-picker, expo-camera
-- AsyncStorage para persistencia local
+- AsyncStorage para persistencia local (mobile y web client; en build
+  estático web la persistencia queda desactivada por el guard de SSR)
 
 ## Estructura de carpetas
 /app          → pantallas (expo-router)

@@ -281,6 +281,48 @@ CREATE POLICY comentarios_delete ON comentarios
     USING (autor_id = auth.uid());
 
 -- ============================================================================
+-- RPC · validación de código de campo en signup de empleados
+-- ============================================================================
+-- Por qué existe esta función:
+--
+-- En el flujo de registro, ANTES de crear el user en auth.users, la app
+-- necesita validar que el `codigo` del campo que el empleado tipeó realmente
+-- existe. Sin esto, podríamos crear un user huérfano si el código está mal.
+--
+-- El problema es que la policy `campos_select` exige
+--     id = current_user_campo_id() OR jefe_id = auth.uid()
+-- y un usuario que recién está por registrarse cumple ninguna:
+--   - es anon (no tiene auth.uid()), o
+--   - tiene auth pero no tiene profile aún, así que current_user_campo_id()
+--     devuelve NULL y nunca es jefe_id de un campo.
+--
+-- En cualquiera de los dos casos, un SELECT sobre `campos` devuelve 0 filas
+-- y la app no puede distinguir "código mal escrito" de "policy bloqueante".
+--
+-- Solución: una RPC SECURITY DEFINER que devuelve SOLO el id del campo
+-- (no el nombre, ni el jefe, ni el resto de las filas), expuesta a anon y
+-- authenticated. Es el mínimo dato necesario para que el cliente pueda
+-- proceder con el INSERT en `profiles` con un campo_id válido.
+--
+-- Endurecimientos estándar de SECURITY DEFINER:
+--   - SET search_path = public para evitar search_path hijacking.
+--   - STABLE porque no muta estado.
+--   - Sólo devuelve uuid; un atacante que enumere códigos solo obtiene
+--     "existe / no existe" + el uuid, lo mismo que ya filtra el modelo
+--     a cualquier empleado válido.
+CREATE OR REPLACE FUNCTION public.buscar_campo_por_codigo(p_codigo text)
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT id FROM campos WHERE codigo = p_codigo
+$$;
+
+GRANT EXECUTE ON FUNCTION public.buscar_campo_por_codigo(text) TO anon, authenticated;
+
+-- ============================================================================
 -- TESTING · ejemplos didácticos (NO ejecutar en producción)
 -- ============================================================================
 -- En psql/SQL Editor de Supabase podés simular ser un usuario específico
