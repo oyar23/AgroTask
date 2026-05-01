@@ -14,8 +14,14 @@ export default function EmpleadoLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: 'Empleado',
+          title: 'Mis tareas',
           headerRight: () => <LogoutButton />,
+        }}
+      />
+      <Stack.Screen
+        name="tareas/[id]"
+        options={{
+          title: 'Tarea',
         }}
       />
     </Stack>
