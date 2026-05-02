@@ -27,9 +27,37 @@ export default function RootLayout() {
     void useAuthStore.getState().loadSession();
   }, []);
 
+  // El profile se carga acá afuera (no dentro del callback de
+  // onAuthStateChange) porque GoTrue invoca el callback con su lock
+  // interno tomado, y un fetchProfile adentro deadlockeaba con
+  // signInWithPassword. Reaccionamos a `session sin profile` y
+  // disparamos la carga acá, donde no hay lock.
   useEffect(() => {
-    if (!loading) void SplashScreen.hideAsync().catch(() => {});
-  }, [loading]);
+    if (session && !profile) {
+      void useAuthStore.getState().loadProfile();
+    }
+  }, [session, profile]);
+
+  const showSplash = loading || (session !== null && profile === null);
+
+  useEffect(() => {
+    if (!showSplash) void SplashScreen.hideAsync().catch(() => {});
+  }, [showSplash]);
+
+  // Decisión por render path. UN solo punto de salida por estado, sin
+  // oscilación. Cada cambio del tipo de raíz (View / Redirect / Stack)
+  // causa que expo-router re-monte el RootLayout, así que minimizamos
+  // los pasos:
+  //
+  //   loading=true                   → <Cargando>     (loadSession)
+  //   no session                     → <Redirect login> | <Stack> si ya en (auth)
+  //   session && no profile          → <Cargando>     (loadProfile)
+  //   session && profile, rol mismatch → <Redirect /(rol)>
+  //   session && profile, rol ok     → <Stack>
+  //
+  // El return final del Stack está envuelto en SafeAreaProvider; los
+  // returns de "Cargando" y "Redirect" no — porque Redirect no renderiza
+  // y la pantalla "Cargando" es global y no necesita safe-area.
 
   if (loading) {
     return (
@@ -39,19 +67,19 @@ export default function RootLayout() {
     );
   }
 
-  // Decidimos la redirección durante el render con <Redirect>. La
-  // alternativa imperativa con router.replace() en useEffect deja al árbol
-  // en un estado inconsistente cuando la URL inicial no matchea el grupo
-  // del rol: el _layout del grupo intenta montarse antes de que el effect
-  // dispare el replace. <Redirect> se evalúa en el render path y nunca
-  // monta el subárbol equivocado.
   const inAuth = segments[0] === '(auth)';
 
-  // Sin sesión válida (incluye el caso "huérfano": session sin profile, que
-  // puede pasar si la signup quedó a medias): a login si no estamos ya en
-  // (auth).
-  if (!session || !profile) {
+  if (!session) {
     if (!inAuth) return <Redirect href="/(auth)/login" />;
+  } else if (!profile) {
+    // loadProfile en curso (post signIn / signUp / sesión cacheada).
+    // Mientras tanto, pantalla estable de "Cargando" — no mezclar con
+    // <Redirect> acá.
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.loadingText}>Cargando…</Text>
+      </View>
+    );
   } else if (profile.rol === 'jefe' && segments[0] !== '(jefe)') {
     return <Redirect href="/(jefe)" />;
   } else if (profile.rol === 'empleado' && segments[0] !== '(empleado)') {
