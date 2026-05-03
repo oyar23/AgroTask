@@ -12,7 +12,8 @@ export const tareaFormSchema = z.object({
   descripcion: z.string().trim().max(2000, 'La descripción es demasiado larga'),
   empleadoId: z
     .string()
-    .min(1, 'Asigná un empleado'),
+    .min(1, 'Asigná un empleado')
+    .uuid('Asigná un empleado'),
   fechaLimite: z.date().nullable(),
 });
 

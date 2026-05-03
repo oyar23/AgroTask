@@ -29,7 +29,11 @@ export default function NuevaTarea() {
 
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [empleadoId, setEmpleadoId] = useState<string | null>(null);
+  // Arranca en '' (no null) para que coincida con el `value` del item
+  // placeholder del Picker. Si arrancara en null y el dropdown no
+  // renderizara un item con value='', el Picker mostraba el primer
+  // empleado visualmente pero el state quedaba sin selección real.
+  const [empleadoId, setEmpleadoId] = useState<string>('');
   const [fechaLimite, setFechaLimite] = useState<Date | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
@@ -45,7 +49,7 @@ export default function NuevaTarea() {
     const parsed = tareaFormSchema.safeParse({
       titulo,
       descripcion,
-      empleadoId: empleadoId ?? '',
+      empleadoId,
       fechaLimite,
     });
 
@@ -140,10 +144,9 @@ export default function NuevaTarea() {
         label="Empleado"
         value={empleadoId}
         options={empleadoOptions}
-        onChange={setEmpleadoId}
+        onChange={(v) => setEmpleadoId(v ?? '')}
         placeholder="Elegí un empleado"
         error={errors.empleadoId}
-        allowEmpty={false}
       />
       <DatePickerField
         label="Fecha límite (opcional)"

@@ -42,7 +42,9 @@ export default function TareaDetalleJefe() {
   const [editing, setEditing] = useState(false);
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [empleadoId, setEmpleadoId] = useState<string | null>(null);
+  // '' representa "sin selección" para coincidir con el item placeholder
+  // del Dropdown. Mismo motivo que en `nueva.tsx`.
+  const [empleadoId, setEmpleadoId] = useState<string>('');
   const [fechaLimite, setFechaLimite] = useState<Date | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +55,7 @@ export default function TareaDetalleJefe() {
     if (!tarea) return;
     setTitulo(tarea.titulo);
     setDescripcion(tarea.descripcion ?? '');
-    setEmpleadoId(tarea.empleado_id);
+    setEmpleadoId(tarea.empleado_id ?? '');
     setFechaLimite(tarea.fecha_limite ? new Date(tarea.fecha_limite) : null);
   }, [tarea]);
 
@@ -68,7 +70,7 @@ export default function TareaDetalleJefe() {
     const parsed = tareaFormSchema.safeParse({
       titulo,
       descripcion,
-      empleadoId: empleadoId ?? '',
+      empleadoId,
       fechaLimite,
     });
     if (!parsed.success) {
@@ -175,9 +177,9 @@ export default function TareaDetalleJefe() {
           label="Empleado"
           value={empleadoId}
           options={empleadoOptions}
-          onChange={setEmpleadoId}
+          onChange={(v) => setEmpleadoId(v ?? '')}
+          placeholder="Elegí un empleado"
           error={errors.empleadoId}
-          allowEmpty={false}
         />
         <DatePickerField
           label="Fecha límite (opcional)"
