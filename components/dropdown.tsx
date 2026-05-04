@@ -40,13 +40,19 @@ export function Dropdown<T extends string>({
             onChange(next === '' ? null : (next as T))
           }
           style={styles.picker}
+          itemStyle={styles.pickerItem}
           dropdownIconColor="#1f6f3f"
         >
           {allowEmpty ? (
             <Picker.Item label={placeholder} value="" color="#888" />
           ) : null}
           {options.map((opt) => (
-            <Picker.Item key={opt.value} label={opt.label} value={opt.value} />
+            <Picker.Item
+              key={opt.value}
+              label={opt.label}
+              value={opt.value}
+              color="#1a1a1a"
+            />
           ))}
         </Picker>
       </View>
@@ -77,6 +83,12 @@ const styles = StyleSheet.create({
   },
   picker: {
     color: '#111',
+  },
+  // iOS usa itemStyle para el color del texto del wheel; sin esto queda
+  // gris claro casi ilegible al sol.
+  pickerItem: {
+    color: '#1a1a1a',
+    fontSize: 17,
   },
   errorText: {
     color: '#c0392b',

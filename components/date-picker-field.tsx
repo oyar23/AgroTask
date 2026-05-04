@@ -63,6 +63,7 @@ export function DatePickerField({
           display={Platform.OS === 'ios' ? 'spinner' : 'default'}
           onChange={handleChange}
           minimumDate={minimumDate}
+          textColor="#1a1a1a"
         />
       ) : null}
       {Platform.OS === 'ios' && show ? (
