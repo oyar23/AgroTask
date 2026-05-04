@@ -1,45 +1,42 @@
 -- ============================================================================
 -- AgroTasks · policies-storage.sql
 -- ============================================================================
--- Habilita RLS sobre `storage.objects` para el bucket "fotos" y define las
--- policies. Aplicar DESPUÉS de schema.sql + policies.sql.
+-- ⚠️  ESTE ARCHIVO NO SE EJECUTA EN EL SQL EDITOR.
 --
--- ANTES de ejecutar este archivo:
---   1. En el dashboard de Supabase → Storage, crear el bucket "fotos"
---      como **privado** (no marcar "public bucket"). Si ya existe, dejarlo.
---   2. NO subir nada todavía: las policies se aplican apenas existe el
---      bucket; sin ellas, los INSERTs van a fallar para usuarios normales.
+-- En Supabase Cloud, la tabla `storage.objects` es propiedad de
+-- `supabase_storage_admin`, no de `postgres`. Por eso `CREATE POLICY`
+-- directo desde el SQL Editor falla con:
 --
--- Path convention de los archivos:
---   {tarea_id}/{foto_id}.jpg
+--     ERROR: 42501: must be owner of table objects
 --
--- - El primer segmento es el `tarea_id` (uuid), que usamos en las policies
---   para resolver permisos vía la tabla `tareas`.
--- - El segundo segmento es el `id` de la fila de `fotos` que el cliente
---   genera con gen_random_uuid() antes de insertar (para que el path y la
---   fila apunten al mismo archivo).
+-- Las policies de storage se crean desde el dashboard:
 --
--- Las queries de policies extraen `tarea_id` con
--- `split_part(name, '/', 1)::uuid`. `name` es la columna de
--- `storage.objects` que guarda el path completo dentro del bucket.
+--     Storage → seleccionar bucket "fotos" → tab "Policies" → New policy
+--
+-- Las instrucciones paso a paso (nombre, operación, expresión exacta para
+-- copiar y pegar en el form) están en `docs/05-fotos.md`, sección "Setup
+-- de policies de storage en el dashboard".
+--
+-- Este archivo queda como **referencia escrita** del intent de cada policy:
+-- si algún día Supabase abilita ALTER sobre storage.objects desde el SQL
+-- Editor, sirve para aplicar todo de un saque. También sirve como spec si
+-- vamos a self-host o a CLI (`supabase migrations`) más adelante.
 -- ============================================================================
 
 -- ============================================================================
--- HABILITAR RLS sobre storage.objects
+-- INTENT (no ejecutable acá)
 -- ============================================================================
--- En Supabase Storage, el RLS sobre `storage.objects` ya viene habilitado
--- por default; lo dejamos explícito para no depender de eso.
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
--- ============================================================================
--- INSERT · subir una foto al bucket "fotos"
--- ============================================================================
--- Permite subir si:
---   - el bucket es "fotos",
---   - el caller es el "owner" del archivo (Supabase setea owner = auth.uid()
---     automáticamente en el upload),
---   - el primer segmento del path es un uuid existente en `tareas`,
---   - y el caller es el empleado asignado o el jefe del campo de esa tarea.
+-- Asume que `storage.objects` ya tiene RLS habilitado (Supabase lo hace por
+-- default).
+--
+-- Las helper `public.es_jefe_del_campo(...)` y `auth.uid()` funcionan
+-- igual desde una policy de storage que desde una policy de tabla.
+-- `(storage.foldername(name))[1]` extrae el primer segmento del path
+-- (`tarea_id`) — es el equivalente UI-friendly a
+-- `split_part(name, '/', 1)`.
+
+/*
 CREATE POLICY fotos_storage_insert ON storage.objects
     FOR INSERT TO authenticated
     WITH CHECK (
@@ -47,7 +44,7 @@ CREATE POLICY fotos_storage_insert ON storage.objects
         AND owner = auth.uid()
         AND EXISTS (
             SELECT 1 FROM public.tareas t
-            WHERE t.id::text = split_part(name, '/', 1)
+            WHERE t.id::text = (storage.foldername(name))[1]
               AND (
                   t.empleado_id = auth.uid()
                   OR public.es_jefe_del_campo(t.campo_id)
@@ -55,18 +52,13 @@ CREATE POLICY fotos_storage_insert ON storage.objects
         )
     );
 
--- ============================================================================
--- SELECT · ver una foto (para signed URL u operaciones internas)
--- ============================================================================
--- Refleja la lógica de `fotos_select` en policies.sql: cualquiera que pueda
--- ver la tarea, puede leer la foto.
 CREATE POLICY fotos_storage_select ON storage.objects
     FOR SELECT TO authenticated
     USING (
         bucket_id = 'fotos'
         AND EXISTS (
             SELECT 1 FROM public.tareas t
-            WHERE t.id::text = split_part(name, '/', 1)
+            WHERE t.id::text = (storage.foldername(name))[1]
               AND (
                   t.empleado_id = auth.uid()
                   OR public.es_jefe_del_campo(t.campo_id)
@@ -74,10 +66,6 @@ CREATE POLICY fotos_storage_select ON storage.objects
         )
     );
 
--- ============================================================================
--- DELETE · borrar una foto
--- ============================================================================
--- Solo el que la subió (owner = auth.uid()) o el jefe del campo de la tarea.
 CREATE POLICY fotos_storage_delete ON storage.objects
     FOR DELETE TO authenticated
     USING (
@@ -86,32 +74,12 @@ CREATE POLICY fotos_storage_delete ON storage.objects
             owner = auth.uid()
             OR EXISTS (
                 SELECT 1 FROM public.tareas t
-                WHERE t.id::text = split_part(name, '/', 1)
+                WHERE t.id::text = (storage.foldername(name))[1]
                   AND public.es_jefe_del_campo(t.campo_id)
             )
         )
     );
+*/
 
--- ============================================================================
--- UPDATE · sin policy permisiva = bloqueado
--- ============================================================================
--- No tiene sentido "actualizar" una foto en el MVP: si querés cambiarla,
--- borrás y subís de nuevo. Sin policy de UPDATE permisiva, queda bloqueado.
-
--- ============================================================================
--- TESTING
--- ============================================================================
--- En el SQL Editor, simular ser un usuario:
---
--- BEGIN;
---   SET LOCAL role = 'authenticated';
---   SET LOCAL "request.jwt.claim.sub" = 'EMPLEADO_UUID';
---   -- Esto debería fallar si la tarea no es del empleado:
---   SELECT * FROM storage.objects
---   WHERE bucket_id = 'fotos'
---     AND name LIKE 'TAREA_AJENA_UUID/%';
---   -- Esperado: 0 filas
--- ROLLBACK;
---
--- Para testing real, mejor hacerlo desde la app: subir una foto,
--- intentar leerla con un user de otro campo, etc.
+-- UPDATE: sin policy permisiva = bloqueado. No tiene sentido "actualizar"
+-- una foto en el MVP; si querés cambiarla, borrás y subís de nuevo.

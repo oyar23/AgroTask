@@ -4,6 +4,189 @@ El empleado saca fotos para documentar tareas (alambrado, animal,
 maquinaria) y las sube como evidencia. El jefe las ve. En este MVP
 el jefe no sube fotos.
 
+## Setup de policies de storage en el dashboard
+
+> ⚠️ **No se ejecuta `supabase/policies-storage.sql` en el SQL Editor.**
+>
+> En proyectos Supabase Cloud, `storage.objects` es propiedad de
+> `supabase_storage_admin`, no de `postgres`. Si intentás
+> `CREATE POLICY` directo, te tira:
+>
+>     ERROR: 42501: must be owner of table objects
+>
+> Las policies de storage se crean desde el dashboard. Los pasos
+> abajo son la traducción 1-a-1 del archivo `.sql`.
+
+### Paso 1 · Crear el bucket
+
+1. Storage → **New bucket**.
+2. Name: `fotos`.
+3. **NO** marcar "Public bucket".
+4. File size limit: dejar el default (50 MB alcanza).
+5. Allowed MIME types: dejar vacío (cualquier tipo) o limitar a
+   `image/jpeg`. Al MVP no le cambia nada.
+6. Save.
+
+### Paso 2 · Verificar que RLS está activo
+
+En el SQL Editor:
+
+```sql
+SELECT relname, relrowsecurity
+FROM pg_class
+WHERE relname = 'objects'
+  AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'storage');
+```
+
+`relrowsecurity = true`. Supabase lo deja así por default; si lo ves
+en `false`, contactá soporte (no es algo que vamos a tocar nosotros).
+
+### Paso 3 · Crear las tres policies
+
+Storage → seleccionar bucket **`fotos`** → tab **Policies** →
+**New policy** → "For full customization".
+
+Cada policy se crea por separado. Pegá el nombre exacto, la
+operación, los roles y la expresión que va abajo.
+
+#### Policy 1 · `fotos_storage_insert`
+
+Permite subir si el caller es el dueño del archivo y el primer
+segmento del path es el id de una tarea visible para él.
+
+| Campo | Valor |
+|---|---|
+| **Policy name** | `fotos_storage_insert` |
+| **Allowed operation** | `INSERT` |
+| **Target roles** | `authenticated` |
+
+**Policy definition (WITH CHECK):**
+
+```sql
+bucket_id = 'fotos'
+AND owner = auth.uid()
+AND EXISTS (
+    SELECT 1 FROM public.tareas t
+    WHERE t.id::text = (storage.foldername(name))[1]
+      AND (
+          t.empleado_id = auth.uid()
+          OR public.es_jefe_del_campo(t.campo_id)
+      )
+)
+```
+
+#### Policy 2 · `fotos_storage_select`
+
+Permite leer si el path apunta a una tarea visible para el caller
+(empleado asignado o jefe del campo). Necesario para resolver signed
+URLs y para listados internos del SDK de Storage.
+
+| Campo | Valor |
+|---|---|
+| **Policy name** | `fotos_storage_select` |
+| **Allowed operation** | `SELECT` |
+| **Target roles** | `authenticated` |
+
+**Policy definition (USING):**
+
+```sql
+bucket_id = 'fotos'
+AND EXISTS (
+    SELECT 1 FROM public.tareas t
+    WHERE t.id::text = (storage.foldername(name))[1]
+      AND (
+          t.empleado_id = auth.uid()
+          OR public.es_jefe_del_campo(t.campo_id)
+      )
+)
+```
+
+#### Policy 3 · `fotos_storage_delete`
+
+Permite borrar si el caller subió el archivo (`owner = auth.uid()`)
+o es el jefe del campo de la tarea.
+
+| Campo | Valor |
+|---|---|
+| **Policy name** | `fotos_storage_delete` |
+| **Allowed operation** | `DELETE` |
+| **Target roles** | `authenticated` |
+
+**Policy definition (USING):**
+
+```sql
+bucket_id = 'fotos'
+AND (
+    owner = auth.uid()
+    OR EXISTS (
+        SELECT 1 FROM public.tareas t
+        WHERE t.id::text = (storage.foldername(name))[1]
+          AND public.es_jefe_del_campo(t.campo_id)
+    )
+)
+```
+
+#### UPDATE · sin policy
+
+No creamos policy de UPDATE. Sin policy permisiva, queda bloqueado.
+En el MVP no hay caso de uso para "modificar" un archivo; si hay que
+cambiar la foto, borrás y subís otra.
+
+### Por qué `storage.foldername(name)` y no `split_part`
+
+Las dos sirven. `(storage.foldername(name))[1]` es la helper que
+provee Supabase específicamente para parsear paths en el contexto
+de storage:
+
+- `storage.foldername('abc/def.jpg')` devuelve `{abc}` (text array
+  con los directorios; no incluye el filename).
+- `(storage.foldername(name))[1]` extrae el primero, que en nuestra
+  convención es el `tarea_id`.
+
+Es equivalente a `split_part(name, '/', 1)` pero más legible y, si
+algún día Supabase agrega validación o caching sobre `foldername`,
+heredamos automático.
+
+### Por qué las helper de `public.*` funcionan acá
+
+`public.es_jefe_del_campo(...)` está definida como `SECURITY DEFINER`
+con `SET search_path = public` en `policies.sql`. Eso significa:
+
+- Cualquier usuario autenticado puede llamarla (`GRANT EXECUTE` lo
+  da Supabase por default sobre funciones del schema `public`).
+- Internamente corre con permisos del owner, así que la subquery
+  contra `campos` no dispara la policy `campos_select` y no hay
+  recursión.
+
+Lo único que cambia respecto a su uso en `policies.sql` es que
+desde una policy de storage hay que prefijar con `public.` (porque
+el contexto de la policy no tiene `public` en el `search_path`).
+
+### Cómo verificar que quedaron bien
+
+Storage → bucket `fotos` → tab Policies. Tenés que ver tres filas:
+
+```
+fotos_storage_insert    INSERT    authenticated
+fotos_storage_select    SELECT    authenticated
+fotos_storage_delete    DELETE    authenticated
+```
+
+Probar end-to-end (recomendado, más confiable que el SQL):
+
+1. Logueado como empleado, ir al detalle de una tarea suya y subir
+   una foto. Debe aparecer en la grilla.
+2. Como ese mismo empleado, intentar abrir la foto que subió → tap
+   en miniatura → modal full screen.
+3. Como jefe del campo, abrir la misma tarea → debe ver la foto.
+4. Como **otro** empleado de **otro** campo (si tenés cómo armar el
+   caso): la query a `fotos` no devuelve nada para esa tarea, así
+   que el grid sale vacío.
+
+Si la subida falla con "No tenés permiso para esta foto", lo más
+probable es que falte la policy de INSERT o que `bucket_id` no
+matche el nombre exacto del bucket.
+
 ## Componentes
 
 ```
